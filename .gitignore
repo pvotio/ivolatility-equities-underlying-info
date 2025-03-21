@@ -1,2 +1,13 @@
-# Google App Engine generated folder
-appengine-generated/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+.env/
+
+# Logs
+*.log
+
+# Docker artifacts
+*.pid
