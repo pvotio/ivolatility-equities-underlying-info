@@ -44,6 +44,10 @@ def main():
         logging.error("DB_SERVER or DB_NAME environment variables not set. Exiting.")
         sys.exit(1)
 
+    if not table_name:
+        logging.error("TARGET_TABLE environment variable not set. Exiting.")
+        sys.exit(1)
+
     logging.info(f"Using LOAD_DATE={load_date}")
 
     # 2) Configure IVOL API access
@@ -92,7 +96,7 @@ def main():
 
     # 6) Delete old data (for the LOAD_DATE), then insert new data
     #
-    #   Here, let's assume we want to match on a column named [Start date] 
+    #   Here, let's assume we want to match on a column named [Start date]
     #   in the table. Adjust this logic to match your actual key columns.
     #
     delete_sql = f"DELETE FROM {table_name} WHERE [Start date] = ?"
@@ -114,11 +118,13 @@ def main():
         if "Start date" not in marketData.columns:
             marketData["Start date"] = load_date
 
-        # Insert via to_sql (append mode)
+        # Insert with if_exists="fail", meaning:
+        #   - The table must already exist
+        #   - If the table doesn't exist or doesn't match columns, it raises an error
         marketData.to_sql(
             name=table_name,
             con=engine,
-            if_exists='append',  # Insert into existing table
+            if_exists='fail',  # Fail if table doesn't exist
             index=False
         )
         logging.info(f"Inserted {len(marketData)} rows into {table_name}.")
