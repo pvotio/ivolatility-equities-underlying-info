@@ -163,26 +163,26 @@ def main():
         data_tuples = list(
             subset[[
                 "Status",
-                "Stock ticker",
-                "Company name",
-                "Exchange MIC",
-                "Exchange name",
-                "Start date",
-                "End date",
+                "Stock_ticker",
+                "Company_name",
+                "Exchange_MIC",
+                "Exchange_name",
+                "Start_date",
+                "End_date",
                 "Region",
-                "Security type",
+                "Security_type",
                 "ISIN",
                 "CUSIP",
                 "SEDOL",
                 "FIGI",
                 "Options",
-                "Opt exchange MIC",
-                "Opt exchange name",
-                "Start opt date",
-                "End opt date",
-                "Dividend Convention",
+                "Opt_exchange MIC",
+                "Opt_exchange name",
+                "Start_opt_date",
+                "End_opt_date",
+                "Dividend_Convention",
                 "StockID",
-                "BLMB ticker"
+                "BLMB_ticker"
             ]].itertuples(index=False, name=None)
         )
 
