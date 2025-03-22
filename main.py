@@ -99,8 +99,8 @@ def main():
     #   Here, let's assume we want to match on a column named [Start date]
     #   in the table. Adjust this logic to match your actual key columns.
     #
-    delete_sql = f"DELETE FROM {table_name} WHERE [Start date] = ?"
-    logging.info(f"Deleting existing rows in {table_name} for [Start date] = {load_date}...")
+    delete_sql = f"DELETE FROM {table_name}"
+    logging.info(f"Deleting existing rows in {table_name}")
 
     try:
         with pyodbc.connect(odbc_conn_str, attrs_before=attrs) as conn:
