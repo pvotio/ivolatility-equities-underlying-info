@@ -41,6 +41,10 @@ def main():
     # 1) Load environment variables
     api_key     = os.getenv("IVOL_API_KEY", "")
     load_date   = os.getenv("LOAD_DATE", "")  
+    # If load_date is empty, default to yesterday
+    if not load_date:
+        load_date = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+
     db_server   = os.getenv("DB_SERVER", "")
     db_name     = os.getenv("DB_NAME", "")
     table_name  = os.getenv("TARGET_TABLE", "etl.ivolatility_underlying_info")
@@ -237,6 +241,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
