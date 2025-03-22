@@ -57,10 +57,10 @@ def main():
         logging.error(f"Failed to configure iVol API: {e}")
         sys.exit(1)
 
-    # 3) Fetch data
+    # 3) Fetch data from iVolatility
     try:
         logging.info(f"Fetching data from iVol for date={load_date}...")
-        marketData = getMarketData(date=load_date)  # returns a pandas DataFrame
+        marketData = getMarketData(date=load_date)  # returns a Pandas DataFrame
     except Exception as e:
         logging.error(f"Error fetching data from iVol: {e}")
         sys.exit(1)
@@ -74,7 +74,6 @@ def main():
     # 4) Get Azure AD token for SQL
     logging.info("Obtaining Azure AD token using DefaultAzureCredential...")
     try:
-        from azure.identity import DefaultAzureCredential
         credential = DefaultAzureCredential()
         token_obj = credential.get_token("https://database.windows.net/.default")
         access_token = token_obj.token
@@ -92,16 +91,8 @@ def main():
         "TrustServerCertificate=no;"
     )
 
-    # 5) Build the SQLAlchemy engine
-    engine = create_engine(
-        f"mssql+pyodbc:///?odbc_connect={quote_plus(odbc_conn_str)}",
-        connect_args={'attrs_before': attrs}
-    )
-
-    # 6) Delete old rows for this date
-    #
-    #   Adjust "[Start date]" to match your actual column name(s).
-    #
+    # 5) (Optional) Delete old rows for this date
+    #    Adjust "[Start date]" to match your table's date column
     delete_sql = f"DELETE FROM {table_name} WHERE [Start date] = ?"
     logging.info(f"Deleting existing rows for date={load_date} in {table_name}...")
 
@@ -115,27 +106,100 @@ def main():
         logging.error(f"Error deleting old rows: {ex}")
         sys.exit(1)
 
-    # 7) Insert new data
-    try:
-        # Ensure the DataFrame has the "Start date" column
-        if "Start date" not in marketData.columns:
-            marketData["Start date"] = load_date
+    # 6) Insert new data via pyodbc.executemany (no .to_sql => no CREATE TABLE attempt)
 
-        # Use if_exists="fail" to ensure we do NOT create the table
-        # If the table doesn't exist, or columns don't match, this will raise an error
-        marketData.to_sql(
-            name=table_name,  # If table_name includes schema, e.g. "etl.ivolatility_underlying_info", it might be best to pass schema=... instead
-            con=engine,
-            if_exists='fail',  # never create a table, fail if missing
-            index=False
+    # Ensure the DataFrame has the "Start date" column
+    if "Start date" not in marketData.columns:
+        marketData["Start date"] = load_date
+
+    # Build an INSERT statement for your actual columns in the target table.
+    # Example columns (21 fields). Adjust to match your real schema/column names:
+    insert_sql = f"""
+    INSERT INTO {table_name} (
+        [Status],
+        [Stock ticker],
+        [Company name],
+        [Exchange MIC],
+        [Exchange name],
+        [Start date],
+        [End date],
+        [Region],
+        [Security type],
+        [ISIN],
+        [CUSIP],
+        [SEDOL],
+        [FIGI],
+        [Options],
+        [Opt exchange MIC],
+        [Opt exchange name],
+        [Start opt date],
+        [End opt date],
+        [Dividend Convention],
+        [StockID],
+        [BLMB ticker]
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
+    # Convert the DataFrame to list-of-tuples in the same column order
+    # (match the order in the INSERT statement exactly)
+    # If your table/DF has fewer or more columns, adjust accordingly.
+    chunk_size = 5000
+    total_inserted = 0
+
+    # Some columns might not be present in marketData if the API doesn't return them.
+    # Ensure they're present or default them:
+    for col in ["Status","Stock ticker","Company name","Exchange MIC","Exchange name",
+                "Start date","End date","Region","Security type","ISIN","CUSIP","SEDOL",
+                "FIGI","Options","Opt exchange MIC","Opt exchange name","Start opt date",
+                "End opt date","Dividend Convention","StockID","BLMB ticker"]:
+        if col not in marketData.columns:
+            marketData[col] = None  # or appropriate defaults
+
+    # Insert in chunks
+    for start_idx in range(0, len(marketData), chunk_size):
+        subset = marketData.iloc[start_idx:start_idx+chunk_size]
+        # Build a list of tuples
+        data_tuples = list(
+            subset[[
+                "Status",
+                "Stock ticker",
+                "Company name",
+                "Exchange MIC",
+                "Exchange name",
+                "Start date",
+                "End date",
+                "Region",
+                "Security type",
+                "ISIN",
+                "CUSIP",
+                "SEDOL",
+                "FIGI",
+                "Options",
+                "Opt exchange MIC",
+                "Opt exchange name",
+                "Start opt date",
+                "End opt date",
+                "Dividend Convention",
+                "StockID",
+                "BLMB ticker"
+            ]].itertuples(index=False, name=None)
         )
-        logging.info(f"Inserted {len(marketData)} rows into {table_name}.")
-    except Exception as e:
-        logging.error(f"Error inserting data into {table_name}: {e}")
-        sys.exit(1)
 
+        # Insert
+        try:
+            with pyodbc.connect(odbc_conn_str, attrs_before=attrs) as conn:
+                cursor = conn.cursor()
+                cursor.fast_executemany = True
+                cursor.executemany(insert_sql, data_tuples)
+                conn.commit()
+            total_inserted += len(data_tuples)
+        except Exception as e:
+            logging.error(f"Error inserting chunk: {e}")
+            sys.exit(1)
+
+    logging.info(f"Inserted {total_inserted} total rows into {table_name}.")
     logging.info("ETL job completed successfully.")
 
 if __name__ == "__main__":
     main()
-
