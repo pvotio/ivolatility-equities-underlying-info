@@ -90,32 +90,23 @@ def main():
         "TrustServerCertificate=no;"
     )
 
-    # 5) Delete old rows for this date
-    #    "[Start_date]" matches your actual table column
+    # 5) Delete old rows for this date using "[Start_date] = ?"
     delete_sql = f"DELETE FROM {table_name} WHERE [Start_date] = ?"
     logging.info(f"Deleting existing rows for date={load_date} in {table_name}...")
 
     try:
         with pyodbc.connect(odbc_conn_str, attrs_before=attrs) as conn:
             cur = conn.cursor()
-            cur.execute(delete_sql, [load_date])  # pass load_date as param
+            cur.execute(delete_sql, [load_date])
             conn.commit()
         logging.info(f"Deleted old rows for date={load_date} in {table_name}.")
     except Exception as ex:
         logging.error(f"Error deleting old rows: {ex}")
         sys.exit(1)
 
-    # 6) Insert new data via pyodbc.executemany (no .to_sql => no CREATE TABLE attempt)
-
-    # Ensure the DataFrame has the "Start_date" column
-    if "Start_date" not in marketData.columns:
-        # iVol might return "Start date" with a space, so if you see that, rename it:
-        # e.g. marketData.rename(columns={"Start date": "Start_date"}, inplace=True)
-        # or just forcibly set it to load_date if missing
-        marketData["Start_date"] = load_date
-
-    # Rename columns if the DataFrame uses spaces:
-    # For example, if it has "Stock ticker" -> "Stock_ticker", do:
+    # 6) Manually insert data in chunks using pyodbc.executemany
+    #
+    # First, rename columns from spaced => underscores if needed:
     rename_map = {
         "Stock ticker": "Stock_ticker",
         "Company name": "Company_name",
@@ -130,11 +121,52 @@ def main():
         "End opt date": "End_opt_date",
         "Dividend Convention": "Dividend_Convention",
         "BLMB ticker": "BLMB_ticker"
-        # etc. for any others
     }
     marketData.rename(columns=rename_map, inplace=True)
 
-    # This is your final list of columns in the table with underscores
+    # Ensure "Start_date" is set if missing
+    if "Start_date" not in marketData.columns:
+        marketData["Start_date"] = load_date
+
+    # We'll ultimately insert exactly these 21 columns in this order:
+    needed_cols = [
+        "Status",
+        "Stock_ticker",
+        "Company_name",
+        "Exchange_MIC",
+        "Exchange_name",
+        "Start_date",
+        "End_date",
+        "Region",
+        "Security_type",
+        "ISIN",
+        "CUSIP",
+        "SEDOL",
+        "FIGI",
+        "Options",
+        "Opt_exchange_MIC",
+        "Opt_exchange_name",
+        "Start_opt_date",
+        "End_opt_date",
+        "Dividend_Convention",
+        "StockID",
+        "BLMB_ticker"
+    ]
+    # Ensure they exist in the DataFrame. If not, create them with None:
+    for col in needed_cols:
+        if col not in marketData.columns:
+            marketData[col] = None
+
+    # If iVol had leftover columns after rename (like "Stock ticker"), drop them:
+    leftover_cols = set(marketData.columns) - set(needed_cols)
+    if leftover_cols:
+        logging.info(f"Dropping leftover columns that aren't needed: {leftover_cols}")
+        marketData.drop(columns=list(leftover_cols), inplace=True)
+
+    # Debug: log final columns
+    logging.info(f"Final DataFrame columns: {list(marketData.columns)}")
+
+    # Build the INSERT statement with 21 placeholders:
     insert_sql = f"""
     INSERT INTO {table_name} (
         [Status],
@@ -165,48 +197,13 @@ def main():
     chunk_size = 5000
     total_inserted = 0
 
-    # Ensure all these columns exist
-    needed_cols = [
-        "Status","Stock_ticker","Company_name","Exchange_MIC","Exchange_name",
-        "Start_date","End_date","Region","Security_type","ISIN","CUSIP","SEDOL",
-        "FIGI","Options","Opt_exchange_MIC","Opt_exchange_name","Start_opt_date",
-        "End_opt_date","Dividend_Convention","StockID","BLMB_ticker"
-    ]
-    for col in needed_cols:
-        if col not in marketData.columns:
-            marketData[col] = None  # default to None if missing
-
     # Insert in chunks
     for start_idx in range(0, len(marketData), chunk_size):
         subset = marketData.iloc[start_idx:start_idx+chunk_size]
-
-        # Build tuples in the same order as insert_sql
+        # Build a list of tuples in the exact same order:
         data_tuples = list(
-            subset[[
-                "Status",
-                "Stock_ticker",
-                "Company_name",
-                "Exchange_MIC",
-                "Exchange_name",
-                "Start_date",
-                "End_date",
-                "Region",
-                "Security_type",
-                "ISIN",
-                "CUSIP",
-                "SEDOL",
-                "FIGI",
-                "Options",
-                "Opt_exchange_MIC",
-                "Opt_exchange_name",
-                "Start_opt_date",
-                "End_opt_date",
-                "Dividend_Convention",
-                "StockID",
-                "BLMB_ticker"
-            ]].itertuples(index=False, name=None)
+            subset[needed_cols].itertuples(index=False, name=None)
         )
-
         try:
             with pyodbc.connect(odbc_conn_str, attrs_before=attrs) as conn:
                 cursor = conn.cursor()
@@ -223,4 +220,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
