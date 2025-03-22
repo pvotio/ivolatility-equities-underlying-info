@@ -7,7 +7,6 @@ import pyodbc
 import pandas as pd
 
 from azure.identity import DefaultAzureCredential
-from sqlalchemy import create_engine
 from urllib.parse import quote_plus
 
 import ivolatility as ivol
@@ -91,15 +90,15 @@ def main():
         "TrustServerCertificate=no;"
     )
 
-    # 5) (Optional) Delete old rows for this date
-    #    Adjust "[Start date]" to match your table's date column
-    delete_sql = f"DELETE FROM {table_name}"
+    # 5) Delete old rows for this date
+    #    "[Start_date]" matches your actual table column
+    delete_sql = f"DELETE FROM {table_name} WHERE [Start_date] = ?"
     logging.info(f"Deleting existing rows for date={load_date} in {table_name}...")
 
     try:
         with pyodbc.connect(odbc_conn_str, attrs_before=attrs) as conn:
             cur = conn.cursor()
-            cur.execute(delete_sql, [load_date])
+            cur.execute(delete_sql, [load_date])  # pass load_date as param
             conn.commit()
         logging.info(f"Deleted old rows for date={load_date} in {table_name}.")
     except Exception as ex:
@@ -108,12 +107,34 @@ def main():
 
     # 6) Insert new data via pyodbc.executemany (no .to_sql => no CREATE TABLE attempt)
 
-    # Ensure the DataFrame has the "Start date" column
-    if "Start date" not in marketData.columns:
-        marketData["Start date"] = load_date
+    # Ensure the DataFrame has the "Start_date" column
+    if "Start_date" not in marketData.columns:
+        # iVol might return "Start date" with a space, so if you see that, rename it:
+        # e.g. marketData.rename(columns={"Start date": "Start_date"}, inplace=True)
+        # or just forcibly set it to load_date if missing
+        marketData["Start_date"] = load_date
 
-    # Build an INSERT statement for your actual columns in the target table.
-    # Example columns (21 fields). Adjust to match your real schema/column names:
+    # Rename columns if the DataFrame uses spaces:
+    # For example, if it has "Stock ticker" -> "Stock_ticker", do:
+    rename_map = {
+        "Stock ticker": "Stock_ticker",
+        "Company name": "Company_name",
+        "Exchange MIC": "Exchange_MIC",
+        "Exchange name": "Exchange_name",
+        "Start date": "Start_date",
+        "End date": "End_date",
+        "Security type": "Security_type",
+        "Opt exchange MIC": "Opt_exchange_MIC",
+        "Opt exchange name": "Opt_exchange_name",
+        "Start opt date": "Start_opt_date",
+        "End opt date": "End_opt_date",
+        "Dividend Convention": "Dividend_Convention",
+        "BLMB ticker": "BLMB_ticker"
+        # etc. for any others
+    }
+    marketData.rename(columns=rename_map, inplace=True)
+
+    # This is your final list of columns in the table with underscores
     insert_sql = f"""
     INSERT INTO {table_name} (
         [Status],
@@ -141,25 +162,25 @@ def main():
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
-    # Convert the DataFrame to list-of-tuples in the same column order
-    # (match the order in the INSERT statement exactly)
-    # If your table/DF has fewer or more columns, adjust accordingly.
     chunk_size = 5000
     total_inserted = 0
 
-    # Some columns might not be present in marketData if the API doesn't return them.
-    # Ensure they're present or default them:
-    for col in ["Status","Stock ticker","Company name","Exchange MIC","Exchange name",
-                "Start date","End date","Region","Security type","ISIN","CUSIP","SEDOL",
-                "FIGI","Options","Opt exchange MIC","Opt exchange name","Start opt date",
-                "End opt date","Dividend Convention","StockID","BLMB ticker"]:
+    # Ensure all these columns exist
+    needed_cols = [
+        "Status","Stock_ticker","Company_name","Exchange_MIC","Exchange_name",
+        "Start_date","End_date","Region","Security_type","ISIN","CUSIP","SEDOL",
+        "FIGI","Options","Opt_exchange_MIC","Opt_exchange_name","Start_opt_date",
+        "End_opt_date","Dividend_Convention","StockID","BLMB_ticker"
+    ]
+    for col in needed_cols:
         if col not in marketData.columns:
-            marketData[col] = None  # or appropriate defaults
+            marketData[col] = None  # default to None if missing
 
     # Insert in chunks
     for start_idx in range(0, len(marketData), chunk_size):
         subset = marketData.iloc[start_idx:start_idx+chunk_size]
-        # Build a list of tuples
+
+        # Build tuples in the same order as insert_sql
         data_tuples = list(
             subset[[
                 "Status",
@@ -176,8 +197,8 @@ def main():
                 "SEDOL",
                 "FIGI",
                 "Options",
-                "Opt_exchange MIC",
-                "Opt_exchange name",
+                "Opt_exchange_MIC",
+                "Opt_exchange_name",
                 "Start_opt_date",
                 "End_opt_date",
                 "Dividend_Convention",
@@ -186,7 +207,6 @@ def main():
             ]].itertuples(index=False, name=None)
         )
 
-        # Insert
         try:
             with pyodbc.connect(odbc_conn_str, attrs_before=attrs) as conn:
                 cursor = conn.cursor()
@@ -203,3 +223,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
