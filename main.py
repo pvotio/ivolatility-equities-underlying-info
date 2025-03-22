@@ -106,15 +106,15 @@ def main():
     )
 
     # 5) Delete old rows for this date
-    delete_sql = f"DELETE FROM {table_name} WHERE [Start_date] = ?"
-    logging.info(f"Deleting existing rows for date={load_date} in {table_name}...")
+    delete_sql = f"DELETE FROM {table_name}"
+    logging.info(f"Deleting existing rows")
 
     try:
         with pyodbc.connect(odbc_conn_str, attrs_before=attrs) as conn:
             cur = conn.cursor()
-            cur.execute(delete_sql, [load_date])
+            cur.execute(delete_sql)
             conn.commit()
-        logging.info(f"Deleted old rows for date={load_date} in {table_name}.")
+        logging.info(f"Deleted old rows in {table_name}.")
     except Exception as ex:
         logging.error(f"Error deleting old rows: {ex}")
         sys.exit(1)
