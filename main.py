@@ -93,7 +93,7 @@ def main():
 
     # 5) (Optional) Delete old rows for this date
     #    Adjust "[Start date]" to match your table's date column
-    delete_sql = f"DELETE FROM {table_name} WHERE [Start date] = ?"
+    delete_sql = f"DELETE FROM {table_name}"
     logging.info(f"Deleting existing rows for date={load_date} in {table_name}...")
 
     try:
@@ -117,26 +117,26 @@ def main():
     insert_sql = f"""
     INSERT INTO {table_name} (
         [Status],
-        [Stock ticker],
-        [Company name],
-        [Exchange MIC],
-        [Exchange name],
-        [Start date],
-        [End date],
+        [Stock_ticker],
+        [Company_name],
+        [Exchange_MIC],
+        [Exchange_name],
+        [Start_date],
+        [End_date],
         [Region],
-        [Security type],
+        [Security_type],
         [ISIN],
         [CUSIP],
         [SEDOL],
         [FIGI],
         [Options],
-        [Opt exchange MIC],
-        [Opt exchange name],
-        [Start opt date],
-        [End opt date],
-        [Dividend Convention],
+        [Opt_exchange_MIC],
+        [Opt_exchange_name],
+        [Start_opt_date],
+        [End_opt_date],
+        [Dividend_Convention],
         [StockID],
-        [BLMB ticker]
+        [BLMB_ticker]
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
