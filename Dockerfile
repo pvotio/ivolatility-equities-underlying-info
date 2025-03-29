@@ -1,5 +1,5 @@
 # Start from a small Python base image
-FROM python:3.11-slim-bullseye
+FROM python:3.13.2-slim-bullseye
 
 # 1) Install system dependencies (curl, gnupg) + Microsoft ODBC driver
 RUN apt-get update && apt-get install -y \
